@@ -1,0 +1,27 @@
+{
+    "clangd.arguments": [
+        "--background-index",
+        "--compile-commands-dir=${workspaceFolder}/build",
+        "--header-insertion=never",
+    ],
+    "[cpp]": {
+        "editor.formatOnSave": true
+    },
+    "cmake.copyCompileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "cmake.installPrefix": "${workspaceFolder}/install",
+    "cmake.preferredGenerators": ["Ninja"],
+    "cmake.generator": "Ninja",
+
+    "cmake.buildDirectory": "${workspaceFolder}/build/${buildType}",
+    "cmake.configureSettings": {
+        "BUILD_SHARED_LIBS": "ON",
+        "BUILD_EXAMPLES": "ON",
+        // "CMAKE_TOOLCHAIN_FILE": "${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+    },
+
+    // windows specific settings
+    // "cmake.configureEnvironment": {
+    //     "http_proxy": "http://127.0.0.1:30080",
+    //     "https_proxy": "http://127.0.0.1:30080"
+    // }
+}

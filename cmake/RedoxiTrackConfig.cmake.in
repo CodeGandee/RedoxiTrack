@@ -1,0 +1,32 @@
+# config file for project
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# prepend @ProjectName@ to every variable defined in this file
+# so that they do not conflict with other projects
+set(@ProjectName@_package_dir ${PACKAGE_PREFIX_DIR})
+set(@ProjectName@_project_name @ProjectName@)
+
+# project_name must not be defined and non-empty
+if(NOT @ProjectName@_project_name)
+  message(FATAL_ERROR "ProjectName is not set")
+endif()
+
+# find_dependency will override PACKAGE_PREFIX_DIR
+# so DO NOT use PACKAGE_PREFIX_DIR, use @ProjectName@_package_dir instead
+find_dependency(OpenCV REQUIRED)
+find_dependency(Eigen3 REQUIRED)
+
+# append cmake module path
+set(@ProjectName@_module_path
+    "${@ProjectName@_package_dir}/cmake/${@ProjectName@_project_name}")
+
+# already in CMAKE_MODULE_PATH?
+if(NOT @ProjectName@_module_path IN_LIST CMAKE_MODULE_PATH)
+  list(INSERT CMAKE_MODULE_PATH 0 "${@ProjectName@_module_path}")
+endif()
+
+# include the targets file
+include("${@ProjectName@_package_dir}/lib/cmake/@ProjectName@/@ProjectName@Targets.cmake")
+
