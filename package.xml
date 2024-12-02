@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format2.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+
+<!-- A package.xml in the root of a cmake project allows it to be built using colcon (the ROS build system) -->
+
+<package format="2">
+    <name>RedoxiTrack</name>
+    <version>0.1.0</version>
+    <description>
+        RedoxiTrack is a general-purpose C++ shared library for tracking, built with CMake.
+    </description>
+
+    <maintainer email="maintainer@example.com">Team Gandee</maintainer>
+    <license>MIT</license>
+
+    <buildtool_depend>cmake</buildtool_depend>
+
+    <export>
+        <build_type>cmake</build_type>
+    </export>
+</package>
