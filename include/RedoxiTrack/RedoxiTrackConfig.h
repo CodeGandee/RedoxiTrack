@@ -86,8 +86,10 @@ namespace TrackPathStateBitmask
 const int None = 0;       // unspecified state
 const int New = 1;        // the first frame being create
 const int Open = 1 << 1;  // still being tracked
-const int Lost = 1 << 2;  // short term lost track
+const int Lost = 1 << 2;  // short term lost track, wait for re-association
 const int Close = 1 << 3; // no longer being tracked
+
+const int NoMatch = 1 << 4; // missed in the current frame, not matched to any detection
 } // namespace TrackPathStateBitmask
 
 inline void assert_throw(bool expr, std::string msg, bool warn_only = false)
