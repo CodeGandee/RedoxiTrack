@@ -4,7 +4,7 @@
 
 #pragma once
 #include "RedoxiTrack/RedoxiTrackConfig.h"
-#include "opencv2/highgui/highgui.hpp"
+// #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/video/tracking.hpp"
 
 namespace RedoxiTrack
