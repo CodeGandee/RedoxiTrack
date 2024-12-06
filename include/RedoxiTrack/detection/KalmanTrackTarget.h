@@ -5,7 +5,7 @@
 
 #include "RedoxiTrack/RedoxiTrackConfig.h"
 #include "RedoxiTrack/detection/TrackTarget.h"
-#include "opencv2/highgui/highgui.hpp"
+// #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/video/tracking.hpp"
 
 

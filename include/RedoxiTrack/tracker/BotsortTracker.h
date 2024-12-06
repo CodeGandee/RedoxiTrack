@@ -14,7 +14,7 @@
 #include "RedoxiTrack/tracker/TrackingEventHandler.h"
 #include "RedoxiTrack/utils/CosineFeature.h"
 #include "opencv2/core/core_c.h"
-#include "opencv2/highgui.hpp"
+// #include "opencv2/highgui.hpp"
 
 
 
