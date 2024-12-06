@@ -102,8 +102,16 @@ namespace RedoxiTrack{
                 (*iter)->evt_target_closed_after(this, event_data);
             }
         }
+        // 重置frame_number
         m_frame_number = INIT_TRACKING_FRAME;
         m_path_id_for_generate_unique_id = 0;
+
+        // 重置m_lost_targets
+        m_lost_targets.clear();
+        // 重置m_removed_targets
+        m_removed_targets.clear();
+        // 重置m_tracked_targets
+        m_tracked_targets.clear();
     }
 
     void BotsortTracker::track(const cv::Mat &img, const std::vector<DetectionPtr> &detections, int frame_number) {
