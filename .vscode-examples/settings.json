@@ -2,7 +2,7 @@
     "clangd.arguments": [
         "--background-index",
         "--compile-commands-dir=${workspaceFolder}/build",
-        "--header-insertion=never",
+        "--header-insertion=never"
     ],
     "[cpp]": {
         "editor.formatOnSave": true
@@ -16,8 +16,8 @@
     "cmake.configureSettings": {
         "BUILD_SHARED_LIBS": "ON",
         "BUILD_EXAMPLES": "ON",
-        // "CMAKE_TOOLCHAIN_FILE": "${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-    },
+        "CMAKE_TOOLCHAIN_FILE": "${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+    }
 
     // windows specific settings
     // "cmake.configureEnvironment": {
