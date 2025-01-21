@@ -5,6 +5,10 @@
 #include <opencv2/opencv.hpp>
 #include <spdlog/spdlog.h>
 
+#include "RedoxiTrack/tracker/BotsortTracker.h"
+#include "RedoxiTrack/tracker/DeepSortTracker.h"
+#include "RedoxiTrack/tracker/OpticalFlowTracker.h"
+#include "RedoxiTrack/tracker/TrackingEventHandler.h"
 #include "example_common.h"
 #include "example_person_detector.h"
 #include "opencv_demo_yolox.h"
@@ -16,55 +20,12 @@ namespace fs = std::filesystem;
 const int DO_N_FRAME = 3000;
 struct YoloxConfig;
 
-/** @brief Event handler to collect tracking events */
-class ExampleTrackEventHandler : public rxt::TrackingEventHandler
-{
-  public:
-    std::map<RedoxiTrack::DetectionPtr, RedoxiTrack::TrackTargetPtr>
-        m_det2target_create;
-    std::map<RedoxiTrack::DetectionPtr, RedoxiTrack::TrackTargetPtr>
-        m_det2target_assiciate;
-    std::vector<RedoxiTrack::TrackTargetPtr> m_target_closed;
-
-  public:
-    int evt_target_association_after(
-        RedoxiTrack::TrackerBase *sender,
-        const RedoxiTrack::TrackingEvent::TargetAssociation &evt_data) override
-    {
-        m_det2target_assiciate[evt_data.m_detection] = evt_data.m_target;
-        spdlog::info("Target association: det={}, target={}", evt_data.m_detection->get_id(), evt_data.m_target->get_id());
-        return RedoxiTrack::EventHandlerResultTypes::None;
-    }
-
-    int evt_target_created_after(
-        RedoxiTrack::TrackerBase *sender,
-        const RedoxiTrack::TrackingEvent::TargetAssociation &evt_data) override
-    {
-        m_det2target_create[evt_data.m_detection] = evt_data.m_target;
-        spdlog::info("Target created: det={}, target={}", evt_data.m_detection->get_id(), evt_data.m_target->get_id());
-        return RedoxiTrack::EventHandlerResultTypes::None;
-    }
-
-    int evt_target_closed_after(
-        RedoxiTrack::TrackerBase *sender,
-        const RedoxiTrack::TrackingEvent::TargetClosed &evt_data) override
-    {
-        m_target_closed.push_back(evt_data.m_target);
-        spdlog::info("Target closed: target={}", evt_data.m_target->get_id());
-        return RedoxiTrack::EventHandlerResultTypes::None;
-    }
-
-    void clear()
-    {
-        m_det2target_create.clear();
-        m_det2target_assiciate.clear();
-        m_target_closed.clear();
-    }
-};
-
 std::shared_ptr<cv_yolox::YoloX> load_model();
 std::shared_ptr<RedoxiExamples::PersonBodyDetector> create_body_detector(const std::shared_ptr<cv_yolox::YoloX> &model);
-std::shared_ptr<rxt::DeepSortTracker> create_sort_tracker(cv::Size image_size);
+std::shared_ptr<rxt::DeepSortTracker> create_deepsort_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler);
+std::shared_ptr<rxt::SimpleSortTracker> create_simple_sort_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler);
+std::shared_ptr<rxt::BotsortTracker> create_botsort_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler);
+std::shared_ptr<rxt::OpticalFlowTracker> create_optical_flow_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler);
 
 int main()
 {
@@ -99,12 +60,54 @@ int main()
                                    cap.get(cv::CAP_PROP_FRAME_HEIGHT));
 
     // create tracker
-    auto tracker = create_sort_tracker(frame_size);
+    std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler = std::make_shared<rxt::ExternalTrackingEventHandler>();
+    auto tracker = create_simple_sort_tracker(frame_size, event_handler);
+    // auto tracker = create_deepsort_tracker(frame_size, event_handler);
+    // auto tracker = create_botsort_tracker(frame_size, event_handler);
+    // auto tracker = create_optical_flow_tracker(frame_size, event_handler);
 
-    // create tracking event handler to collect tracking events
-    // you need to clean up the event handler after each frame
-    auto event_handler = std::make_shared<ExampleTrackEventHandler>();
-    tracker->add_event_handler(std::dynamic_pointer_cast<rxt::TrackingEventHandler>(event_handler));
+
+    // setup event handler to collect data from tracking events
+    std::set<rxt::TrackTargetPtr> updated_tracked_targets;       // all tracked targets that have appeared in event callbacks
+    std::map<rxt::TrackTargetPtr, rxt::DetectionPtr> target2det; // target to detection
+    std::map<rxt::DetectionPtr, rxt::TrackTargetPtr> det2target; // detection to target
+    event_handler->on_target_association_after =
+        [&target2det,
+         &det2target,
+         &updated_tracked_targets](rxt::ExternalTrackingEventHandler::TrackerBase_t *sender,
+                                   const rxt::ExternalTrackingEventHandler::TargetAssociation_t &evt_data) {
+            // record which detection is associated to which target
+            (void)sender;
+            target2det[evt_data.m_target] = evt_data.m_detection;
+            det2target[evt_data.m_detection] = evt_data.m_target;
+            updated_tracked_targets.insert(evt_data.m_target);
+            return 0;
+        };
+    event_handler->on_target_closed_after =
+        [&updated_tracked_targets](rxt::ExternalTrackingEventHandler::TrackerBase_t *sender,
+                                   const rxt::ExternalTrackingEventHandler::TargetClosed_t &evt_data) {
+            (void)sender;
+            updated_tracked_targets.erase(evt_data.m_target);
+            return 0;
+        };
+    event_handler->on_target_created_after =
+        [&target2det,
+         &det2target,
+         &updated_tracked_targets](rxt::ExternalTrackingEventHandler::TrackerBase_t *sender,
+                                   const rxt::ExternalTrackingEventHandler::TargetAssociation_t &evt_data) {
+            (void)sender;
+            target2det[evt_data.m_target] = evt_data.m_detection;
+            det2target[evt_data.m_detection] = evt_data.m_target;
+            updated_tracked_targets.insert(evt_data.m_target);
+            return 0;
+        };
+    event_handler->on_target_motion_predict_after =
+        [&updated_tracked_targets](rxt::ExternalTrackingEventHandler::TrackerBase_t *sender,
+                                   const rxt::ExternalTrackingEventHandler::TargetMotionPredict_t &evt_data) {
+            (void)sender;
+            updated_tracked_targets.insert(evt_data.m_target);
+            return 0;
+        };
 
     // create output dir
     fs::path output_dir =
@@ -123,10 +126,6 @@ int main()
         spdlog::info("Detecting persons ...");
         auto person_list = detector->detect(frame);
         spdlog::info("Detected {} persons", person_list.size());
-
-        // do tracking
-        // clear recorded events
-        event_handler->clear();
 
         // if this is the first frame, call begin_track()
         std::vector<rxt::DetectionPtr> _detlist;
@@ -210,24 +209,24 @@ struct YoloxConfig {
         target = get_target();
     }
 
-    cv::dnn::Backend get_backend() const
-    {
-        // do we have cuda enabled?
+    cv::dnn::Backend get_backend() const {
+        // 检查编译时是否启用了 CUDA
+    #ifdef HAVE_CUDA
+        // 运行时检查 CUDA 设备
         if (cv::cuda::getCudaEnabledDeviceCount() > 0) {
             return cv::dnn::DNN_BACKEND_CUDA;
-        } else {
-            return cv::dnn::DNN_BACKEND_OPENCV;
         }
+    #endif
+        return cv::dnn::DNN_BACKEND_OPENCV;
     }
 
-    cv::dnn::Target get_target() const
-    {
-        // do we have cuda enabled?
+    cv::dnn::Target get_target() const {
+    #ifdef HAVE_CUDA
         if (cv::cuda::getCudaEnabledDeviceCount() > 0) {
             return cv::dnn::DNN_TARGET_CUDA;
-        } else {
-            return cv::dnn::DNN_TARGET_CPU;
         }
+    #endif
+        return cv::dnn::DNN_TARGET_CPU;
     }
 };
 
@@ -256,15 +255,52 @@ std::shared_ptr<cv_yolox::YoloX> load_model()
     return net;
 }
 
-std::shared_ptr<rxt::DeepSortTracker> create_sort_tracker(cv::Size image_size)
+std::shared_ptr<rxt::SimpleSortTracker> create_simple_sort_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler)
 {
+    // auto tracker = std::make_shared<rxt::DeepSortTracker>();
+    auto tracker = std::make_shared<rxt::SimpleSortTracker>();
+
+    // init tracker
+    rxt::SimpleSortTrackerParam params;
+    params.set_preferred_image_size(image_size);
+    tracker->init(params);
+    tracker->add_event_handler(event_handler);
+    return tracker;
+}
+
+std::shared_ptr<rxt::DeepSortTracker> create_deepsort_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler)
+{
+    // auto tracker = std::make_shared<rxt::DeepSortTracker>();
     auto tracker = std::make_shared<rxt::DeepSortTracker>();
 
     // init tracker
     rxt::DeepSortTrackerParam params;
     params.set_preferred_image_size(image_size);
     tracker->init(params);
+    tracker->add_event_handler(event_handler);
+    return tracker;
+}
 
+std::shared_ptr<rxt::BotsortTracker> create_botsort_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler)
+{
+    // auto tracker = std::make_shared<rxt::BotsortTracker>();
+    auto tracker = std::make_shared<rxt::BotsortTracker>();
+
+    // init tracker
+    rxt::BotsortTrackerParam params;
+    params.set_preferred_image_size(image_size);
+    tracker->init(params);
+    tracker->add_event_handler(event_handler);
+    return tracker;
+}
+
+std::shared_ptr<rxt::OpticalFlowTracker> create_optical_flow_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler)
+{
+    auto tracker = std::make_shared<rxt::OpticalFlowTracker>();
+    rxt::OpticalTrackerParam params;
+    params.set_preferred_image_size(image_size);
+    tracker->init(params);
+    tracker->add_event_handler(event_handler);
     return tracker;
 }
 

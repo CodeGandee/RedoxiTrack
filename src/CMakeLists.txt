@@ -15,19 +15,20 @@ else()
     add_definitions(-DREDOXI_TRACK_STATIC_LIBS)
 endif()
 
-set(detection 
+set(detection
     ${CMAKE_CURRENT_LIST_DIR}/detection/DeepSortTrackTarget.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/detection/SimpleSortTrackTarget.cpp
     ${CMAKE_CURRENT_LIST_DIR}/detection/KalmanTrackTarget.cpp
     ${CMAKE_CURRENT_LIST_DIR}/detection/PersonDetection.cpp
     ${CMAKE_CURRENT_LIST_DIR}/detection/SingleDetection.cpp
     ${CMAKE_CURRENT_LIST_DIR}/detection/TrackTarget.cpp
     ${CMAKE_CURRENT_LIST_DIR}/detection/BotsortTrackTarget.cpp)
 
-set(external 
+set(external
     ${CMAKE_CURRENT_LIST_DIR}/external/Hungarian.cpp
     ${CMAKE_CURRENT_LIST_DIR}/external/lapjv.cpp)
 
-set(tracker 
+set(tracker
     ${CMAKE_CURRENT_LIST_DIR}/tracker/FeatureBaseDetTraits.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tracker/BotsortMotionPrediction.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tracker/BotsortTracker.cpp
@@ -36,7 +37,9 @@ set(tracker
     ${CMAKE_CURRENT_LIST_DIR}/tracker/DeepSortMotionPrediction.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tracker/DeepSortTracker.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tracker/DeepSortTrackerParam.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/tracker/DeepSortTracker.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/tracker/SimpleSortMotionPrediction.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/tracker/SimpleSortTracker.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/tracker/SimpleSortTrackerParam.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tracker/KalmanTracker.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tracker/OpencvOpticalFlow.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tracker/OpticalFlowTracker.cpp
@@ -45,7 +48,7 @@ set(tracker
     ${CMAKE_CURRENT_LIST_DIR}/tracker/TrackerBase.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tracker/TrackerParam.cpp)
 
-set(utils 
+set(utils
     ${CMAKE_CURRENT_LIST_DIR}/utils/utility_functions.cpp
     ${CMAKE_CURRENT_LIST_DIR}/utils/CosineFeature.cpp)
 
