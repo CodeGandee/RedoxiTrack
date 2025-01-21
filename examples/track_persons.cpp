@@ -61,9 +61,9 @@ int main()
 
     // create tracker
     std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler = std::make_shared<rxt::ExternalTrackingEventHandler>();
-    auto tracker = create_simple_sort_tracker(frame_size, event_handler);
+    // auto tracker = create_simple_sort_tracker(frame_size, event_handler);
     // auto tracker = create_deepsort_tracker(frame_size, event_handler);
-    // auto tracker = create_botsort_tracker(frame_size, event_handler);
+    auto tracker = create_botsort_tracker(frame_size, event_handler);
     // auto tracker = create_optical_flow_tracker(frame_size, event_handler);
 
 
@@ -288,6 +288,9 @@ std::shared_ptr<rxt::BotsortTracker> create_botsort_tracker(cv::Size image_size,
 
     // init tracker
     rxt::BotsortTrackerParam params;
+    // 不创建光流param就不使用光流
+    // params.m_optical_param = std::make_shared<rxt::OpticalTrackerParam>();
+    params.m_kalman_param = std::make_shared<rxt::TrackerParam>();
     params.set_preferred_image_size(image_size);
     tracker->init(params);
     tracker->add_event_handler(event_handler);

@@ -17,12 +17,12 @@ class REDOXI_TRACK_API BotsortTrackerParam : public TrackerParam
 
     std::shared_ptr<TrackerParam> clone() const override;
 
-    const OpticalTrackerParam &get_optical_param() const
+    std::shared_ptr<const OpticalTrackerParam> get_optical_param() const
     {
         return m_optical_param;
     }
 
-    const TrackerParam &get_kalman_param() const
+    std::shared_ptr<const TrackerParam> get_kalman_param() const
     {
         return m_kalman_param;
     }
@@ -42,8 +42,8 @@ class REDOXI_TRACK_API BotsortTrackerParam : public TrackerParam
     bool m_use_optical_before_track = false;
     bool m_fuse_score = false; // botsort/bytetrack false
     bool m_use_reid_feature = true;
-    OpticalTrackerParam m_optical_param;
-    TrackerParam m_kalman_param;
+    std::shared_ptr<OpticalTrackerParam> m_optical_param;
+    std::shared_ptr<TrackerParam> m_kalman_param;
 };
 
 using BotsortTrackerParamPtr = std::shared_ptr<BotsortTrackerParam>;
