@@ -56,7 +56,7 @@ void OpticalFlowTracker::finish_track()
         for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
             (*iter)->evt_target_closed_before(this, event_data);
         }
-
+        event_data.m_target->set_path_state(TrackPathStateBitmask::Close);
         m_id2target.erase(del_id);
 
         for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
@@ -178,6 +178,7 @@ void OpticalFlowTracker::track(const cv::Mat &img,
         }
 
         p.second->set_bbox(key->second);
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
 
         for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
             (*iter)->evt_target_motion_predict_after(this, event_data);
@@ -195,7 +196,19 @@ void OpticalFlowTracker::_motion_predict(const cv::Mat &img, int frame_number,
     // optical flow predict m_id2target,  if predict bbox out of img then keep old bbox, so NOW delete_id is always empty.
     for (auto &p : id2target) {
         std::map<int, BBOX>::iterator key = id2bbox_after_flow.find(p.first);
+
+        TrackingEvent::TargetMotionPredict event_data = TrackingEvent::TargetMotionPredict();
+        event_data.m_target = p.second;
+        for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+            (*iter)->evt_target_motion_predict_before(this, event_data);
+        }
+
         p.second->set_bbox(key->second);
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+
+        for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+            (*iter)->evt_target_motion_predict_after(this, event_data);
+        }
     }
 }
 
@@ -272,6 +285,7 @@ void OpticalFlowTracker::delete_target(int path_id)
         (*iter)->evt_target_closed_before(this, event_data);
     }
 
+    event_data.m_target->set_path_state(TrackPathStateBitmask::Close);
     m_id2target.erase(path_id);
 
     for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
@@ -314,7 +328,7 @@ TrackTargetPtr OpticalFlowTracker::create_target(const DetectionPtr &det, int fr
     output->set_start_frame_number(frame_number);
     output->set_end_frame_number(frame_number);
     output->set_path_id(_generate_path_id());
-    output->set_path_state(TrackPathStateBitmask::New);
+    output->set_path_state(TrackPathStateBitmask::New | TrackPathStateBitmask::Open);
     return output;
 }
 
