@@ -17,12 +17,12 @@ class REDOXI_TRACK_API DeepSortTrackerParam : public TrackerParam
 
     std::shared_ptr<TrackerParam> clone() const override;
 
-    const OpticalTrackerParam &get_optical_param() const
+    std::shared_ptr<const OpticalTrackerParam> get_optical_param() const
     {
         return m_optical_param;
     }
 
-    const TrackerParam &get_kalman_param() const
+    std::shared_ptr<const TrackerParam> get_kalman_param() const
     {
         return m_kalman_param;
     }
@@ -47,8 +47,8 @@ class REDOXI_TRACK_API DeepSortTrackerParam : public TrackerParam
     float m_gating_dist_lambda = 0.98;
     float m_duplicate_iou_dist = 0.15;
     bool m_use_optical_before_track = true;
-    OpticalTrackerParam m_optical_param;
-    TrackerParam m_kalman_param;
+    std::shared_ptr<OpticalTrackerParam> m_optical_param;
+    std::shared_ptr<TrackerParam> m_kalman_param;
 };
 
 using DeepSortTrackerParamPtr = std::shared_ptr<DeepSortTrackerParam>;
