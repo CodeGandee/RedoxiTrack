@@ -632,7 +632,7 @@ void BotsortTracker::_motion_predict(const cv::Mat &img, std::vector<TrackTarget
     assert_throw(m_frame_number != INIT_TRACKING_FRAME, "m frame number is INIT_TRACKING_FRAME");
     assert_throw(m_frame_number <= frame_number, "frame number less than m frame number");
     assert_throw(!img.empty(), "img is empty");
-    assert_throw(m_optical_flow_tracker != nullptr, "m_optical_flow_tracker is nullptr");
+    assert_throw(m_optical_flow_tracker != nullptr, "use motion predict, but m_optical_flow_tracker is nullptr");
 
     auto p_param = dynamic_cast<BotsortTrackerParam *>(m_param.get());
 
