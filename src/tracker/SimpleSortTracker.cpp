@@ -69,6 +69,11 @@ void SimpleSortTracker::begin_track(const cv::Mat &img,
 
 void SimpleSortTracker::finish_track()
 {
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
+
     m_kalman_tracker->finish_track();
 
     std::vector<int> delete_ids;
@@ -84,6 +89,10 @@ void SimpleSortTracker::finish_track()
             (*iter)->evt_target_closed_before(this, event_data);
         }
 
+        event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                            TrackPathStateBitmask::Close) &
+                                            ~(TrackPathStateBitmask::Open |
+                                            TrackPathStateBitmask::Lost));
         m_id2target.erase(del_id);
 
         for (auto iter = m_event_handlers.begin();
@@ -104,6 +113,11 @@ void SimpleSortTracker::track(const cv::Mat &img,
     assert_throw(m_frame_number <= frame_number,
                  "m frame number less than frame number");
 
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
+
     // delete removed tracker
     _remove_targets(frame_number);
 
@@ -120,7 +134,17 @@ void SimpleSortTracker::track(const cv::Mat &img,
         auto kalman_target = dynamic_cast<SimpleSortTrackTarget *>(
                                     single_deepsort_target.get())
                                     ->m_kalman_target;
+        TrackingEvent::TargetMotionPredict event_data = TrackingEvent::TargetMotionPredict();
+        event_data.m_target = single_deepsort_target;
+        for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+            (*iter)->evt_target_motion_predict_before(this, event_data);
+        }
+
         single_deepsort_target->set_bbox(kalman_target->get_bbox());
+
+        for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+            (*iter)->evt_target_motion_predict_after(this, event_data);
+        }
     }
 
     _update_frame_number(frame_number);
@@ -144,8 +168,8 @@ void SimpleSortTracker::track(const cv::Mat &img,
     std::vector<DetectionPtr>
         iou_detections; // detections used for iou matching
     for (auto p : unmatched_detection_predict) {
-        if (targets[p]->get_path_state() == TrackPathStateBitmask::New ||
-            targets[p]->get_path_state() == TrackPathStateBitmask::Open)
+        if (targets[p]->get_path_state() & TrackPathStateBitmask::New ||
+            targets[p]->get_path_state() & TrackPathStateBitmask::Open)
             iou_targets.push_back(targets[p]);
     }
     for (auto p : unmatched_detection_now) {
@@ -186,6 +210,11 @@ void SimpleSortTracker::track(const cv::Mat &img, int frame_number)
                  "m frame number is INIT_TRACKING_FRAME");
     assert_throw(m_frame_number <= frame_number,
                  "frame number less than m frame number");
+
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
 
     _remove_targets(frame_number);
 
@@ -246,12 +275,6 @@ void SimpleSortTracker::_bbox2xyah(const BBOX &bbox, cv::Mat &output)
     output.at<float>(3, 0) = bbox.height;
 }
 
-const std::map<int, TrackTargetPtr> &
-    SimpleSortTracker::get_all_open_targets() const
-{
-    return m_id2target;
-}
-
 TrackTargetPtr SimpleSortTracker::get_open_target(int path_id) const
 {
     return TrackerBase::get_open_target(path_id);
@@ -293,7 +316,7 @@ TrackTargetPtr SimpleSortTracker::create_target(const DetectionPtr &det,
     output->set_start_frame_number(frame_number);
     output->set_end_frame_number(frame_number);
     output->set_path_id(_generate_path_id());
-    output->set_path_state(TrackPathStateBitmask::New);
+    output->set_path_state(TrackPathStateBitmask::New | TrackPathStateBitmask::Open);
     return output;
 }
 
@@ -452,7 +475,10 @@ void SimpleSortTracker::_remove_targets(const int frame_number)
              iter != m_event_handlers.end(); iter++) {
             (*iter)->evt_target_closed_before(this, event_data);
         }
-
+        event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                            TrackPathStateBitmask::Close) &
+                                            ~(TrackPathStateBitmask::Open |
+                                            TrackPathStateBitmask::Lost));
         m_id2target.erase(p);
 
         for (auto iter = m_event_handlers.begin();
@@ -495,6 +521,10 @@ void SimpleSortTracker::_update_target(TrackTargetPtr &deepsort_target_ptr,
 
         single_deepsort_target->set_bbox(single_kalman_target->get_bbox());
         single_deepsort_target->set_end_frame_number(frame_number);
+        single_deepsort_target->set_path_state((single_deepsort_target->get_path_state() |
+                                                    TrackPathStateBitmask::Open) &
+                                                    ~(TrackPathStateBitmask::Lost |
+                                                    TrackPathStateBitmask::Close));
         single_kalman_target->set_end_frame_number(frame_number);
         _update_features(single_deepsort_target,
                          single_detection->get_feature());

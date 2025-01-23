@@ -46,6 +46,11 @@ void OpticalFlowTracker::begin_track(const cv::Mat &img,
 
 void OpticalFlowTracker::finish_track()
 {
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
+
     std::vector<int> delete_ids;
     for (auto &p : m_id2target) {
         delete_ids.push_back(p.first);
@@ -56,7 +61,10 @@ void OpticalFlowTracker::finish_track()
         for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
             (*iter)->evt_target_closed_before(this, event_data);
         }
-        event_data.m_target->set_path_state(TrackPathStateBitmask::Close);
+        event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                            TrackPathStateBitmask::Close) &
+                                            ~(TrackPathStateBitmask::Open |
+                                            TrackPathStateBitmask::Lost));
         m_id2target.erase(del_id);
 
         for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
@@ -72,6 +80,11 @@ void OpticalFlowTracker::track(const cv::Mat &img,
                                int frame_number)
 {
     assert_throw(!img.empty(), "img is empty");
+
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
 
     std::vector<int> delete_id;
     for (auto &p : m_id2target) {
@@ -138,7 +151,10 @@ void OpticalFlowTracker::track(const cv::Mat &img,
             (*iter)->evt_target_association_before(this, event_data);
         }
 
-        single_target->set_path_state(TrackPathStateBitmask::Open);
+        single_target->set_path_state((single_target->get_path_state() |
+                                        TrackPathStateBitmask::Open) &
+                                        ~(TrackPathStateBitmask::Lost |
+                                        TrackPathStateBitmask::Close));
         single_target->set_underlying_detection(single_detection, true);
         single_target->set_end_frame_number(frame_number);
 
@@ -165,6 +181,11 @@ void OpticalFlowTracker::track(const cv::Mat &img,
     assert_throw(m_frame_number <= frame_number, "frame number less than m frame number");
     assert_throw(!img.empty(), "img is empty");
 
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
+
     auto id2bbox_after_flow = _advance_bbox_with_motion_prediction(img, frame_number, m_id2target);
 
     vector<int> delete_id;
@@ -178,7 +199,6 @@ void OpticalFlowTracker::track(const cv::Mat &img,
         }
 
         p.second->set_bbox(key->second);
-        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
 
         for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
             (*iter)->evt_target_motion_predict_after(this, event_data);
@@ -204,7 +224,6 @@ void OpticalFlowTracker::_motion_predict(const cv::Mat &img, int frame_number,
         }
 
         p.second->set_bbox(key->second);
-        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
 
         for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
             (*iter)->evt_target_motion_predict_after(this, event_data);
@@ -272,11 +291,6 @@ void OpticalFlowTracker::set_tracker_param(const TrackerParam &param)
 {
 }
 
-const std::map<int, TrackTargetPtr> &OpticalFlowTracker::get_all_open_targets() const
-{
-    return m_id2target;
-}
-
 void OpticalFlowTracker::delete_target(int path_id)
 {
     TrackingEvent::TargetClosed event_data = TrackingEvent::TargetClosed();
@@ -285,7 +299,10 @@ void OpticalFlowTracker::delete_target(int path_id)
         (*iter)->evt_target_closed_before(this, event_data);
     }
 
-    event_data.m_target->set_path_state(TrackPathStateBitmask::Close);
+    event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                        TrackPathStateBitmask::Close) &
+                                        ~(TrackPathStateBitmask::Open |
+                                        TrackPathStateBitmask::Lost));
     m_id2target.erase(path_id);
 
     for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {

@@ -73,8 +73,6 @@ class REDOXI_TRACK_API OpticalFlowTracker : public TrackerBase
     void
         track(const cv::Mat &img, int frame_number) override;
 
-    const std::map<int, TrackTargetPtr> &get_all_open_targets() const override;
-
     TrackTargetPtr get_open_target(int path_id) const override;
 
     void add_target(const TrackTargetPtr &target) override;

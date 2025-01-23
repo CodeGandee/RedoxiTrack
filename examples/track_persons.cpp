@@ -26,6 +26,7 @@ std::shared_ptr<rxt::DeepSortTracker> create_deepsort_tracker(cv::Size image_siz
 std::shared_ptr<rxt::SimpleSortTracker> create_simple_sort_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler);
 std::shared_ptr<rxt::BotsortTracker> create_botsort_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler);
 std::shared_ptr<rxt::OpticalFlowTracker> create_optical_flow_tracker(cv::Size image_size, std::shared_ptr<rxt::ExternalTrackingEventHandler> event_handler);
+std::string get_target_state_str(int path_state);
 
 int main()
 {
@@ -81,13 +82,15 @@ int main()
             target2det[evt_data.m_target] = evt_data.m_detection;
             det2target[evt_data.m_detection] = evt_data.m_target;
             updated_tracked_targets.insert(evt_data.m_target);
+            spdlog::info("target association: detection_id:{} -> target_id:{}", evt_data.m_detection->get_id(), evt_data.m_target->get_path_id());
             return 0;
         };
     event_handler->on_target_closed_after =
         [&updated_tracked_targets](rxt::ExternalTrackingEventHandler::TrackerBase_t *sender,
                                    const rxt::ExternalTrackingEventHandler::TargetClosed_t &evt_data) {
             (void)sender;
-            updated_tracked_targets.erase(evt_data.m_target);
+            updated_tracked_targets.insert(evt_data.m_target);
+            spdlog::info("target closed: target_id:{}", evt_data.m_target->get_path_id());
             return 0;
         };
     event_handler->on_target_created_after =
@@ -99,6 +102,7 @@ int main()
             target2det[evt_data.m_target] = evt_data.m_detection;
             det2target[evt_data.m_detection] = evt_data.m_target;
             updated_tracked_targets.insert(evt_data.m_target);
+            spdlog::info("target created: target_id:{}, detection_id:{}", evt_data.m_target->get_path_id(), evt_data.m_detection->get_id());
             return 0;
         };
     event_handler->on_target_motion_predict_after =
@@ -106,6 +110,9 @@ int main()
                                    const rxt::ExternalTrackingEventHandler::TargetMotionPredict_t &evt_data) {
             (void)sender;
             updated_tracked_targets.insert(evt_data.m_target);
+            spdlog::info("target motion predict after: target_id:{}, predict_bbox:x={},y={},w={},h={}", evt_data.m_target->get_path_id(),
+                                evt_data.m_target->get_bbox().x, evt_data.m_target->get_bbox().y,
+                                evt_data.m_target->get_bbox().width, evt_data.m_target->get_bbox().height);
             return 0;
         };
 
@@ -121,6 +128,12 @@ int main()
         cv::namedWindow("frames", cv::WINDOW_FREERATIO);
     }
     while (cap.read(frame)) {
+        // clear data collected from event handler
+        // this is only for demonstration, these data are not used by the tracker, but can be used for visualization
+        updated_tracked_targets.clear();
+        target2det.clear();
+        det2target.clear();
+
         spdlog::info("Processing frame {}, size: {}x{}, channels: {}", ith_frame,
                      frame.cols, frame.rows, frame.channels());
         spdlog::info("Detecting persons ...");
@@ -178,6 +191,16 @@ int main()
         }
 
         ith_frame++;
+
+        // print data collected from event handler
+        spdlog::info("summary of track events");
+        for (const auto &target : updated_tracked_targets) {
+            spdlog::info("updated: target_id:{}, status:{}", target->get_path_id(), get_target_state_str(target->get_path_state()));
+        }
+
+        for (const auto& [det, target] : det2target) {
+            spdlog::info("detection association: detection_id:{} -> target_id:{}", det->get_id(), target->get_path_id());
+        }
 
         if (ith_frame > DO_N_FRAME) {
             break;
@@ -275,6 +298,11 @@ std::shared_ptr<rxt::DeepSortTracker> create_deepsort_tracker(cv::Size image_siz
 
     // init tracker
     rxt::DeepSortTrackerParam params;
+    // 不创建光流param就不使用光流
+    params.m_use_optical_before_track = false;
+    // params.m_optical_param = std::make_shared<rxt::OpticalTrackerParam>();
+    params.m_kalman_param = std::make_shared<rxt::TrackerParam>();
+
     params.set_preferred_image_size(image_size);
     tracker->init(params);
     tracker->add_event_handler(event_handler);
@@ -289,6 +317,7 @@ std::shared_ptr<rxt::BotsortTracker> create_botsort_tracker(cv::Size image_size,
     // init tracker
     rxt::BotsortTrackerParam params;
     // 不创建光流param就不使用光流
+    params.m_use_optical_before_track = false;
     // params.m_optical_param = std::make_shared<rxt::OpticalTrackerParam>();
     params.m_kalman_param = std::make_shared<rxt::TrackerParam>();
     params.set_preferred_image_size(image_size);
@@ -316,5 +345,15 @@ std::shared_ptr<RedoxiExamples::PersonBodyDetector> create_body_detector(const s
     return detector;
 }
 
+std::string get_target_state_str(int path_state)
+{
+    std::string state_str;
+    if (path_state & rxt::TrackPathStateBitmask::New) state_str += "New |";
+    if (path_state & rxt::TrackPathStateBitmask::Open) state_str += "Open |";
+    if (path_state & rxt::TrackPathStateBitmask::Lost) state_str += "Lost |";
+    if (path_state & rxt::TrackPathStateBitmask::Close) state_str += "Close |";
+    if (path_state & rxt::TrackPathStateBitmask::NoMatch) state_str += "NoMatch |";
+    return state_str;
+}
 
 /** @brief Event handler to collect tracking events */

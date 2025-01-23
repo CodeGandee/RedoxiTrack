@@ -2,6 +2,8 @@
 // Created by 001730 chengxiao on 22/8/31.
 //
 #include "RedoxiTrack/tracker/BotsortTracker.h"
+#include "RedoxiTrack/RedoxiTrackConfig.h"
+#include "RedoxiTrack/detection/TrackTarget.h"
 #include "RedoxiTrack/utils/utility_functions.h"
 #include <algorithm>
 #define MAX_COST_MATRIX_NUM 9999
@@ -99,6 +101,11 @@ void BotsortTracker::begin_track(const cv::Mat &img,
 
 void BotsortTracker::finish_track()
 {
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
+
     if (m_optical_flow_tracker) {
         m_optical_flow_tracker->finish_track();
     }
@@ -116,6 +123,10 @@ void BotsortTracker::finish_track()
             (*iter)->evt_target_closed_before(this, event_data);
         }
 
+        event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                            TrackPathStateBitmask::Close) &
+                                            ~(TrackPathStateBitmask::Open |
+                                            TrackPathStateBitmask::Lost));
         m_id2target.erase(del_id);
 
         for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
@@ -138,6 +149,11 @@ void BotsortTracker::track(const cv::Mat &img, const std::vector<DetectionPtr> &
 {
     assert_throw(m_frame_number != INIT_TRACKING_FRAME, "m frame number is INIT_TRACKING_FRAME");
     assert_throw(m_frame_number <= frame_number, "m frame number less than frame number");
+
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
 
 #if DEBUG
     std::cout << "--------------------------------- frame id " << frame_number + 1 << " ---------------------------------" << std::endl;
@@ -278,7 +294,15 @@ void BotsortTracker::track(const cv::Mat &img, const std::vector<DetectionPtr> &
         for (auto &p : target_pool) {
             auto &botsort_target = p;
             auto kalman_target = dynamic_cast<BotsortTrackTarget *>(botsort_target.get())->m_kalman_target;
+            TrackingEvent::TargetMotionPredict event_data = TrackingEvent::TargetMotionPredict();
+            event_data.m_target = botsort_target;
+            for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+                (*iter)->evt_target_motion_predict_before(this, event_data);
+            }
             botsort_target->set_bbox(kalman_target->get_bbox());
+            for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+                (*iter)->evt_target_motion_predict_after(this, event_data);
+            }
         }
     }
     _update_frame_number(frame_number);
@@ -338,7 +362,7 @@ void BotsortTracker::track(const cv::Mat &img, const std::vector<DetectionPtr> &
     // STEP2 : second association with low score detection bboxes by iou matching
     std::vector<TrackTargetPtr> first_unmatched_track; // from first association unmatched targets
     for (auto p : unmatched_detection_predict) {
-        if (target_pool[p]->get_path_state() == TrackPathStateBitmask::Open)
+        if (target_pool[p]->get_path_state() & TrackPathStateBitmask::Open)
             first_unmatched_track.push_back(target_pool[p]);
     }
 
@@ -374,9 +398,16 @@ void BotsortTracker::track(const cv::Mat &img, const std::vector<DetectionPtr> &
     for (size_t i = 0; i < unmatched_iou_detection_predict.size(); i++) {
         auto botsort_target_ptr = first_unmatched_track[unmatched_iou_detection_predict[i]];
         auto single_botsort_target = dynamic_pointer_cast<BotsortTrackTarget>(botsort_target_ptr);
-        if (single_botsort_target->get_path_state() != TrackPathStateBitmask::Lost) {
-            single_botsort_target->set_path_state(TrackPathStateBitmask::Lost);
-            single_botsort_target->m_kalman_target->set_path_state(TrackPathStateBitmask::Lost);
+        if (!(single_botsort_target->get_path_state() & TrackPathStateBitmask::Lost)) {
+            single_botsort_target->set_path_state((single_botsort_target->get_path_state() |
+                                                TrackPathStateBitmask::Lost) &
+                                                ~(TrackPathStateBitmask::Open |
+                                                TrackPathStateBitmask::Close));
+            single_botsort_target->m_kalman_target->set_path_state(
+                (single_botsort_target->m_kalman_target->get_path_state() |
+                TrackPathStateBitmask::Lost) &
+                ~(TrackPathStateBitmask::Open |
+                TrackPathStateBitmask::Close));
             lost.push_back(single_botsort_target);
         }
     }
@@ -418,8 +449,15 @@ void BotsortTracker::track(const cv::Mat &img, const std::vector<DetectionPtr> &
     for (size_t i = 0; i < unmatched_track_third.size(); i++) {
         auto botsort_target_ptr = unconfirmed[unmatched_track_third[i]];
         auto single_botsort_target = dynamic_pointer_cast<BotsortTrackTarget>(botsort_target_ptr);
-        single_botsort_target->set_path_state(TrackPathStateBitmask::Close);
-        single_botsort_target->m_kalman_target->set_path_state(TrackPathStateBitmask::Close);
+        single_botsort_target->set_path_state((single_botsort_target->get_path_state() |
+                                                TrackPathStateBitmask::Close) &
+                                                ~(TrackPathStateBitmask::Open |
+                                                TrackPathStateBitmask::Lost));
+        single_botsort_target->m_kalman_target->set_path_state(
+            (single_botsort_target->m_kalman_target->get_path_state() |
+            TrackPathStateBitmask::Close) &
+            ~(TrackPathStateBitmask::Open |
+            TrackPathStateBitmask::Lost));
         removed.push_back(single_botsort_target);
     }
 
@@ -448,8 +486,16 @@ void BotsortTracker::track(const cv::Mat &img, const std::vector<DetectionPtr> &
     // STEP5 : update state
     for (auto &l : m_lost_targets) {
         if (m_frame_number - l.second->get_end_frame_number() > p_param->m_max_time_lost) {
-            l.second->set_path_state(TrackPathStateBitmask::Close);
-            dynamic_cast<BotsortTrackTarget *>(l.second.get())->m_kalman_target->set_path_state(TrackPathStateBitmask::Close);
+            l.second->set_path_state((l.second->get_path_state() |
+                                    TrackPathStateBitmask::Close) &
+                                    ~(TrackPathStateBitmask::Open |
+                                    TrackPathStateBitmask::Lost));
+            auto t_botsort_target = dynamic_cast<BotsortTrackTarget *>(l.second.get());
+            t_botsort_target->m_kalman_target->set_path_state(
+                (t_botsort_target->m_kalman_target->get_path_state() |
+                TrackPathStateBitmask::Close) &
+                ~(TrackPathStateBitmask::Open |
+                TrackPathStateBitmask::Lost));
             removed.push_back(l.second);
         }
     }
@@ -502,7 +548,7 @@ void BotsortTracker::track(const cv::Mat &img, const std::vector<DetectionPtr> &
     for (auto &target : m_tracked_targets) {
         auto tid = target.first;
         auto track_ptr = target.second;
-        if (track_ptr->get_path_state() != TrackPathStateBitmask::Open) {
+        if (!(track_ptr->get_path_state() & TrackPathStateBitmask::Open)) {
             del_id.push_back(tid);
         }
     }
@@ -586,6 +632,11 @@ void BotsortTracker::track(const cv::Mat &img, int frame_number)
     assert_throw(m_frame_number != INIT_TRACKING_FRAME, "m frame number is INIT_TRACKING_FRAME");
     assert_throw(m_frame_number <= frame_number, "frame number less than m frame number");
 
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
+
     if (m_optical_flow_tracker && m_optical_flow_handler) {
         m_optical_flow_handler->clear();
         m_optical_flow_tracker->track(img, frame_number);
@@ -655,7 +706,18 @@ void BotsortTracker::_motion_predict(const cv::Mat &img, std::vector<TrackTarget
 
         m_kalman_tracker->KalmanTracker::update_kalman(single_kalman_target, single_optical_target->get_bbox());
 
+        TrackingEvent::TargetMotionPredict event_data = TrackingEvent::TargetMotionPredict();
+        event_data.m_target = single_botsort_target;
+        for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+            (*iter)->evt_target_motion_predict_before(this, event_data);
+        }
+
         single_botsort_target->set_bbox(single_kalman_target->get_bbox());
+
+        for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+            (*iter)->evt_target_motion_predict_after(this, event_data);
+        }
+
         if (p_param->m_use_reid_feature) {
             if (p->get_feature().size() != 0)
                 _update_features(single_botsort_target, p->get_feature());
@@ -683,7 +745,7 @@ void BotsortTracker::_bbox2xcycwh(const BBOX &bbox, cv::Mat &output)
     output.at<float>(3, 0) = bbox.height;
 }
 
-const std::map<int, TrackTargetPtr> &BotsortTracker::get_all_open_targets() const
+std::map<int, TrackTargetPtr> BotsortTracker::get_all_open_targets() const
 {
     return m_tracked_targets;
 }
@@ -700,7 +762,19 @@ void BotsortTracker::delete_target(int path_id)
     //     m_kalman_tracker->delete_target(single_botsort_target->m_kalman_target->get_path_id());
     //     m_optical_flow_tracker->delete_target(single_botsort_target->m_kalman_target->get_path_id());
     // }
+    TrackingEvent::TargetClosed event_data = TrackingEvent::TargetClosed();
+    event_data.m_target = m_id2target[path_id];
+    for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+        (*iter)->evt_target_closed_before(this, event_data);
+    }
+    event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                        TrackPathStateBitmask::Close) &
+                                        ~(TrackPathStateBitmask::Open |
+                                        TrackPathStateBitmask::Lost));
     m_id2target.erase(path_id);
+    for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+        (*iter)->evt_target_closed_after(this, event_data);
+    }
 }
 
 void BotsortTracker::delete_all_targets()
@@ -731,7 +805,7 @@ TrackTargetPtr BotsortTracker::create_target(const DetectionPtr &det, int frame_
     output->set_start_frame_number(frame_number);
     output->set_end_frame_number(frame_number);
     output->set_path_id(_generate_path_id());
-    output->set_path_state(TrackPathStateBitmask::Open);
+    output->set_path_state(TrackPathStateBitmask::New | TrackPathStateBitmask::Open);
     return output;
 }
 
@@ -1048,6 +1122,10 @@ void BotsortTracker::_remove_targets(vector<TrackTargetPtr> &removed)
         for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
             (*iter)->evt_target_closed_before(this, event_data);
         }
+        event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                            TrackPathStateBitmask::Close) &
+                                            ~(TrackPathStateBitmask::Open |
+                                            TrackPathStateBitmask::Lost));
         m_id2target.erase(p);
         m_removed_targets.erase(p);
 
@@ -1090,11 +1168,17 @@ void BotsortTracker::_update_target(TrackTargetPtr &botsort_target_ptr, const De
         if (add_refind) {
             // update kalman filter, include state post update
             m_kalman_tracker->KalmanTracker::update_kalman(single_kalman_target, single_detection->get_bbox());
-            if (single_botsort_target->get_path_state() == TrackPathStateBitmask::Open) {
+            if (single_botsort_target->get_path_state() & TrackPathStateBitmask::Open) {
                 activated.push_back(single_botsort_target);
             } else {
-                single_botsort_target->set_path_state(TrackPathStateBitmask::Open);
-                single_botsort_target->m_kalman_target->set_path_state(TrackPathStateBitmask::Open);
+                single_botsort_target->set_path_state((single_botsort_target->get_path_state() |
+                                                    TrackPathStateBitmask::Open) &
+                                                    ~(TrackPathStateBitmask::Close |
+                                                    TrackPathStateBitmask::Lost));
+                single_botsort_target->m_kalman_target->set_path_state((single_botsort_target->m_kalman_target->get_path_state() |
+                                                                     TrackPathStateBitmask::Open) &
+                                                                     ~(TrackPathStateBitmask::Close |
+                                                                     TrackPathStateBitmask::Lost));
                 refind.push_back(single_botsort_target);
             }
         } else {
@@ -1105,7 +1189,10 @@ void BotsortTracker::_update_target(TrackTargetPtr &botsort_target_ptr, const De
 
         single_botsort_target->set_bbox(single_kalman_target->get_bbox());
         single_botsort_target->set_end_frame_number(frame_number);
-        single_botsort_target->set_path_state(TrackPathStateBitmask::Open);
+        single_botsort_target->set_path_state((single_botsort_target->get_path_state() |
+                                            TrackPathStateBitmask::Open) &
+                                            ~(TrackPathStateBitmask::Close |
+                                            TrackPathStateBitmask::Lost));
         single_botsort_target->set_quality(single_detection->get_quality());
         single_botsort_target->m_is_activated = true;
         single_kalman_target->set_end_frame_number(frame_number);

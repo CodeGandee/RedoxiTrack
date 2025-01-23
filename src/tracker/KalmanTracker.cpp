@@ -31,6 +31,11 @@ namespace RedoxiTrack {
     }
 
     void KalmanTracker::finish_track() {
+        // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+        for (auto &p : m_id2target) {
+            p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+        }
+
         std::vector<int> delete_ids;
         for (auto &p : m_id2target) {
             delete_ids.push_back(p.first);
@@ -41,7 +46,10 @@ namespace RedoxiTrack {
             for(auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++){
                 auto res = (*iter)->evt_target_closed_before(this, event_data);
             }
-            event_data.m_target->set_path_state(TrackPathStateBitmask::Close);
+            event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                                TrackPathStateBitmask::Close) &
+                                                ~(TrackPathStateBitmask::Open |
+                                                TrackPathStateBitmask::Lost));
             m_id2target.erase(del_id);
 
             for(auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++){
@@ -59,7 +67,10 @@ namespace RedoxiTrack {
         BBOX n_temp_bbox;
         m_motion_predict->get_bbox_state(n_single_kalman_target->get_kf(), n_temp_bbox);
         n_single_kalman_target->set_bbox(n_temp_bbox);
-        n_single_kalman_target->set_path_state(TrackPathStateBitmask::Open);
+        n_single_kalman_target->set_path_state((n_single_kalman_target->get_path_state() |
+                                                TrackPathStateBitmask::Open) &
+                                                ~(TrackPathStateBitmask::Lost |
+                                                TrackPathStateBitmask::Close));
         n_single_kalman_target->m_can_be_update = false;
     }
 
@@ -80,6 +91,10 @@ namespace RedoxiTrack {
     }
 
     void KalmanTracker::track(const cv::Mat &img, const std::vector<DetectionPtr> &detections, int frame_number) {
+        // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+        for (auto &p : m_id2target) {
+            p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+        }
 
         // delete lost trackers
         std::vector<int> delete_id;
@@ -95,7 +110,10 @@ namespace RedoxiTrack {
                 auto res = (*iter)->evt_target_closed_before(this, event_data);
             }
 
-            event_data.m_target->set_path_state(TrackPathStateBitmask::Close);
+            event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                                TrackPathStateBitmask::Close) &
+                                                ~(TrackPathStateBitmask::Open |
+                                                TrackPathStateBitmask::Lost));
             m_id2target.erase(p);
 
             for(auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++){
@@ -191,6 +209,11 @@ namespace RedoxiTrack {
         assert_throw(m_frame_number != INIT_TRACKING_FRAME, "m frame number is INIT_TRACKING_FRAME");
         assert_throw(m_frame_number <= frame_number, "frame number less than m frame number");
 
+        // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+        for (auto &p : m_id2target) {
+            p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+        }
+
         int delta_frame_number = frame_number - m_frame_number;
         for (auto &p : m_id2target) {
 
@@ -215,7 +238,6 @@ namespace RedoxiTrack {
             }
 
             target->set_bbox(single_target_predict_bbox);
-            target->set_path_state(target->get_path_state() & ~TrackPathStateBitmask::New);
 
             for(auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++){
                 auto res = (*iter)->evt_target_motion_predict_after(this, event_data);
@@ -223,12 +245,7 @@ namespace RedoxiTrack {
         }
         else{
             target->set_bbox(single_target_predict_bbox);
-            target->set_path_state(target->get_path_state() & ~TrackPathStateBitmask::New);
         }
-    }
-
-    const std::map<int, TrackTargetPtr> &KalmanTracker::get_all_open_targets() const {
-        return m_id2target;
     }
 
     TrackTargetPtr KalmanTracker::get_open_target(int path_id) const {
@@ -294,7 +311,10 @@ namespace RedoxiTrack {
         for(auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++){
             (*iter)->evt_target_closed_before(this, event_data);
         }
-        event_data.m_target->set_path_state(TrackPathStateBitmask::Close);
+        event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                            TrackPathStateBitmask::Close) &
+                                            ~(TrackPathStateBitmask::Open |
+                                            TrackPathStateBitmask::Lost));
         m_id2target.erase(path_id);
 
         for(auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++){
