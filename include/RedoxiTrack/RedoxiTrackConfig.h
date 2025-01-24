@@ -84,12 +84,18 @@ enum {
 namespace TrackPathStateBitmask
 {
 const int None = 0;       // unspecified state
-const int New = 1;        // the first frame being create
-const int Open = 1 << 1;  // still being tracked
-const int Lost = 1 << 2;  // short term lost track, wait for re-association
-const int Close = 1 << 3; // no longer being tracked
+const int New = 1;        // the first frame being create, 目标刚被创建时
 
-const int NoMatch = 1 << 4; // missed in the current frame, not matched to any detection
+// open/lost/close状态互斥
+// 举个例子，类似于射击游戏，
+// 瞄准一个目标时，视野中存在这个目标且我们跟踪瞄准这个目标，此时目标处于Open状态
+// 如果目标躲在障碍物后面，我们没法瞄准，但我们认为目标只是短期看不到，还是会露头，于是我们依旧尝试再瞄准他，则目标处于Lost状态，
+// 如果目标进了一个门，我们没法瞄准（进入lost状态），等待一段时间后我们认为目标已经离开，不再打算瞄准他，则目标处于Close状态
+const int Open = 1 << 1;  // 目标短期没丢失，仍可能被检测框匹配，运动预测依然有效
+const int Lost = 1 << 2;  // 目标短期丢失，运动预测不可靠（也可能不做运动预测），仍可能被检测框/reid匹配，运动预测依然有效
+const int Close = 1 << 3; // 目标跟踪结束，不会再被更新
+
+const int NoMatch = 1 << 4; // 目标在当前帧中未被检测框匹配
 } // namespace TrackPathStateBitmask
 
 inline void assert_throw(bool expr, std::string msg, bool warn_only = false)

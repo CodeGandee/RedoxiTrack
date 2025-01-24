@@ -118,7 +118,7 @@ class REDOXI_TRACK_API BotsortTracker : public TrackerBase
 
     virtual void pop_tracking_state(bool apply = true) override;
 
-    const std::map<int, TrackTargetPtr> &get_all_open_targets() const override;
+    std::map<int, TrackTargetPtr> get_all_open_targets() const override;
 
     TrackTargetPtr get_open_target(int path_id) const override;
 

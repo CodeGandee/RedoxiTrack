@@ -2,6 +2,8 @@
 // Created by wangjing on 1/11/22.
 //
 #include "RedoxiTrack/tracker/DeepSortTracker.h"
+#include "RedoxiTrack/RedoxiTrackConfig.h"
+#include "RedoxiTrack/detection/TrackTarget.h"
 #include "RedoxiTrack/tracker/DeepSortTrackerParam.h"
 #include "RedoxiTrack/utils/CosineFeature.h"
 #include "RedoxiTrack/utils/utility_functions.h"
@@ -16,16 +18,24 @@ void DeepSortTracker::init(const TrackerParam &param)
     auto p = dynamic_cast<DeepSortTrackerParam *>(m_param.get());
     assert_throw(p, "TrackerParam type is wrong.");
 
-    m_optical_flow_tracker = std::make_shared<OpticalFlowTracker>();
-    m_optical_flow_tracker->init(p->get_optical_param());
+    if (p->get_optical_param()) {
+        m_optical_flow_tracker = std::make_shared<OpticalFlowTracker>();
+        m_optical_flow_tracker->init(*p->get_optical_param());
+    } else {
+        m_optical_flow_tracker = nullptr;
+    }
 
     m_kalman_tracker = std::make_shared<KalmanTracker>();
-    m_kalman_tracker->init(p->get_kalman_param());
+    m_kalman_tracker->init(*p->get_kalman_param());
 
-    m_optical_flow_handler = std::make_shared<OpticalFlowEventHandler>();
+    if (p->get_optical_param()) {
+        m_optical_flow_handler = std::make_shared<OpticalFlowEventHandler>();
+        m_optical_flow_tracker->add_event_handler(m_optical_flow_handler);
+    } else {
+        m_optical_flow_handler = nullptr;
+    }
+
     m_kalman_handler = std::make_shared<KalmanEventHandler>();
-
-    m_optical_flow_tracker->add_event_handler(m_optical_flow_handler);
     m_kalman_tracker->add_event_handler(m_kalman_handler);
 
     m_feature_traits = std::make_shared<CosineFeature>();
@@ -61,23 +71,34 @@ void DeepSortTracker::begin_track(const cv::Mat &img,
 
     _update_frame_number(frame_number);
 
-    m_optical_flow_handler->clear();
-    m_optical_flow_tracker->begin_track(img, detections, frame_number);
+    if (m_optical_flow_tracker) {
+        m_optical_flow_handler->clear();
+        m_optical_flow_tracker->begin_track(img, detections, frame_number);
+    }
     m_kalman_handler->clear();
     m_kalman_tracker->begin_track(img, detections, frame_number);
     for (auto det : detections) {
-        auto optical_target = m_optical_flow_handler->m_det2target_create[det];
+        TrackTargetPtr optical_target = nullptr;
+        if (m_optical_flow_tracker) {
+            optical_target = m_optical_flow_handler->m_det2target_create[det];
+        }
         auto kalman_target = m_kalman_handler->m_det2target_create[det];
 
-        TrackTargetPtr deepsort_target =
-            create_target(det, frame_number, kalman_target, optical_target);
+        TrackTargetPtr deepsort_target = create_target(det, frame_number, kalman_target, optical_target);
         add_target(deepsort_target);
     }
 }
 
 void DeepSortTracker::finish_track()
 {
-    m_optical_flow_tracker->finish_track();
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
+
+    if (m_optical_flow_tracker) {
+        m_optical_flow_tracker->finish_track();
+    }
     m_kalman_tracker->finish_track();
 
     std::vector<int> delete_ids;
@@ -92,7 +113,10 @@ void DeepSortTracker::finish_track()
              iter != m_event_handlers.end(); iter++) {
             (*iter)->evt_target_closed_before(this, event_data);
         }
-
+        event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                            TrackPathStateBitmask::Close) &
+                                            ~(TrackPathStateBitmask::Open |
+                                              TrackPathStateBitmask::Lost));
         m_id2target.erase(del_id);
 
         for (auto iter = m_event_handlers.begin();
@@ -112,6 +136,11 @@ void DeepSortTracker::track(const cv::Mat &img,
                  "m frame number is INIT_TRACKING_FRAME");
     assert_throw(m_frame_number <= frame_number,
                  "m frame number less than frame number");
+
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
 
     // delete removed tracker
     _remove_targets(frame_number);
@@ -135,7 +164,17 @@ void DeepSortTracker::track(const cv::Mat &img,
             auto kalman_target = dynamic_cast<DeepSortTrackTarget *>(
                                      single_deepsort_target.get())
                                      ->m_kalman_target;
+            TrackingEvent::TargetMotionPredict event_data = TrackingEvent::TargetMotionPredict();
+            event_data.m_target = single_deepsort_target;
+            for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+                (*iter)->evt_target_motion_predict_before(this, event_data);
+            }
+
             single_deepsort_target->set_bbox(kalman_target->get_bbox());
+
+            for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+                (*iter)->evt_target_motion_predict_after(this, event_data);
+            }
         }
     }
     _update_frame_number(frame_number);
@@ -159,8 +198,8 @@ void DeepSortTracker::track(const cv::Mat &img,
     std::vector<DetectionPtr>
         iou_detections; // detections used for iou matching
     for (auto p : unmatched_detection_predict) {
-        if (targets[p]->get_path_state() == TrackPathStateBitmask::New ||
-            targets[p]->get_path_state() == TrackPathStateBitmask::Open)
+        if (targets[p]->get_path_state() & TrackPathStateBitmask::New ||
+            targets[p]->get_path_state() & TrackPathStateBitmask::Open)
             iou_targets.push_back(targets[p]);
     }
     for (auto p : unmatched_detection_now) {
@@ -185,11 +224,14 @@ void DeepSortTracker::track(const cv::Mat &img,
         // init kalman
         TrackTargetPtr kalman_track_target_ptr =
             m_kalman_tracker->create_target(iou_detections[p], frame_number);
-        TrackTargetPtr optical_track_target_ptr =
-            m_optical_flow_tracker->create_target(iou_detections[p],
-                                                  frame_number);
         m_kalman_tracker->add_target(kalman_track_target_ptr);
-        m_optical_flow_tracker->add_target(optical_track_target_ptr);
+
+        TrackTargetPtr optical_track_target_ptr = nullptr;
+        if (m_optical_flow_tracker) {
+            optical_track_target_ptr = m_optical_flow_tracker->create_target(iou_detections[p],
+                                                  frame_number);
+            m_optical_flow_tracker->add_target(optical_track_target_ptr);
+        }
 
         // init deepsort
         TrackTargetPtr track_target_ptr =
@@ -206,10 +248,17 @@ void DeepSortTracker::track(const cv::Mat &img, int frame_number)
     assert_throw(m_frame_number <= frame_number,
                  "frame number less than m frame number");
 
+    // 只要进行跟踪，就将已有的所有目标的path_state中的New状态清除
+    for (auto &p : m_id2target) {
+        p.second->set_path_state(p.second->get_path_state() & ~TrackPathStateBitmask::New);
+    }
+
     _remove_targets(frame_number);
 
-    m_optical_flow_handler->clear();
-    m_optical_flow_tracker->track(img, frame_number);
+    if (m_optical_flow_tracker && m_optical_flow_handler) {
+        m_optical_flow_handler->clear();
+        m_optical_flow_tracker->track(img, frame_number);
+    }
     m_kalman_handler->clear();
     m_kalman_tracker->track(img, frame_number);
 
@@ -229,8 +278,10 @@ void DeepSortTracker::track(const cv::Mat &img, int frame_number)
             (*iter)->evt_target_motion_predict_before(this, event_data);
         }
 
-        m_kalman_tracker->update_kalman(single_kalman_target,
-                                        single_optical_target->get_bbox());
+        if (single_optical_target) {
+            m_kalman_tracker->update_kalman(single_kalman_target,
+                                            single_optical_target->get_bbox());
+        }
 
         single_deepsort_target->set_bbox(single_kalman_target->get_bbox());
         _update_features(single_deepsort_target,
@@ -254,6 +305,8 @@ void DeepSortTracker::_motion_predict(const cv::Mat &img,
                  "m frame number is INIT_TRACKING_FRAME");
     assert_throw(m_frame_number <= frame_number,
                  "frame number less than m frame number");
+    assert_throw(!img.empty(), "img is empty");
+    assert_throw(m_optical_flow_tracker != nullptr, "use motion predict, but m_optical_flow_tracker is nullptr");
 
     m_optical_flow_handler->clear();
     m_optical_flow_tracker->track(img, frame_number);
@@ -269,15 +322,25 @@ void DeepSortTracker::_motion_predict(const cv::Mat &img,
             dynamic_pointer_cast<DeepSortTrackTarget>(p.second);
         auto single_kalman_target = single_deepsort_target->m_kalman_target;
         auto single_optical_target = single_deepsort_target->m_optical_target;
-        if (single_deepsort_target->get_path_state() ==
-            TrackPathStateBitmask::Lost) {
+        if (single_deepsort_target->get_path_state() & TrackPathStateBitmask::Lost) {
             continue; // LOST continue,
         }
 
         m_kalman_tracker->update_kalman(single_kalman_target,
                                         single_optical_target->get_bbox());
 
+        TrackingEvent::TargetMotionPredict event_data = TrackingEvent::TargetMotionPredict();
+        event_data.m_target = single_deepsort_target;
+        for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+            (*iter)->evt_target_motion_predict_before(this, event_data);
+        }
+
         single_deepsort_target->set_bbox(single_kalman_target->get_bbox());
+
+        for (auto iter = m_event_handlers.begin(); iter != m_event_handlers.end(); iter++) {
+            (*iter)->evt_target_motion_predict_after(this, event_data);
+        }
+
         _update_features(single_deepsort_target,
                          (id2target)[p.first]->get_feature());
     }
@@ -302,12 +365,6 @@ void DeepSortTracker::_bbox2xyah(const BBOX &bbox, cv::Mat &output)
     output.at<float>(1, 0) = bbox.y + bbox.height / 2.0;
     output.at<float>(2, 0) = bbox.width / bbox.height;
     output.at<float>(3, 0) = bbox.height;
-}
-
-const std::map<int, TrackTargetPtr> &
-    DeepSortTracker::get_all_open_targets() const
-{
-    return m_id2target;
 }
 
 TrackTargetPtr DeepSortTracker::get_open_target(int path_id) const
@@ -351,7 +408,7 @@ TrackTargetPtr DeepSortTracker::create_target(const DetectionPtr &det,
     output->set_start_frame_number(frame_number);
     output->set_end_frame_number(frame_number);
     output->set_path_id(_generate_path_id());
-    output->set_path_state(TrackPathStateBitmask::New);
+    output->set_path_state(TrackPathStateBitmask::New | TrackPathStateBitmask::Open);
     return output;
 }
 
@@ -362,7 +419,7 @@ TrackTargetPtr
 {
     auto output = create_target(det, frame_number);
     auto p = dyncast_with_check<DeepSortTrackTarget>(output.get());
-    p->m_optical_target = optical_target;
+    p->m_optical_target = optical_target; // can be nullptr
     p->m_kalman_target = kalman_target;
     return output;
 }
@@ -507,7 +564,9 @@ void DeepSortTracker::_remove_targets(const int frame_number)
             auto optical_target = dynamic_cast<DeepSortTrackTarget *>(
                                       single_deepsort_target.get())
                                       ->m_optical_target;
-            optical_delete_id.push_back(optical_target->get_path_id());
+            if (optical_target) {  // 如果没用光流则为nullptr
+                optical_delete_id.push_back(optical_target->get_path_id());
+            }
         }
     }
     for (auto &p : delete_id) {
@@ -517,7 +576,10 @@ void DeepSortTracker::_remove_targets(const int frame_number)
              iter != m_event_handlers.end(); iter++) {
             (*iter)->evt_target_closed_before(this, event_data);
         }
-
+        event_data.m_target->set_path_state((event_data.m_target->get_path_state() |
+                                            TrackPathStateBitmask::Close) &
+                                            ~(TrackPathStateBitmask::Open |
+                                            TrackPathStateBitmask::Lost));
         m_id2target.erase(p);
 
         for (auto iter = m_event_handlers.begin();
@@ -529,8 +591,10 @@ void DeepSortTracker::_remove_targets(const int frame_number)
     for (auto &p : kalman_delete_id) {
         m_kalman_tracker->delete_target(p);
     }
-    for (auto &p : optical_delete_id) {
-        m_optical_flow_tracker->delete_target(p);
+    if (m_optical_flow_tracker) {
+        for (auto &p : optical_delete_id) {
+            m_optical_flow_tracker->delete_target(p);
+        }
     }
 }
 
@@ -542,7 +606,7 @@ void DeepSortTracker::_update_target(TrackTargetPtr &deepsort_target_ptr,
         dynamic_pointer_cast<DeepSortTrackTarget>(deepsort_target_ptr);
     auto single_detection = det;
     auto single_kalman_target = single_deepsort_target->m_kalman_target;
-    auto single_optical_target = single_deepsort_target->m_optical_target;
+    auto single_optical_target = single_deepsort_target->m_optical_target;  // can be nullptr
 
     TrackingEvent::TargetAssociation event_data =
         TrackingEvent::TargetAssociation();
@@ -564,13 +628,23 @@ void DeepSortTracker::_update_target(TrackTargetPtr &deepsort_target_ptr,
 
         single_deepsort_target->set_bbox(single_kalman_target->get_bbox());
         single_deepsort_target->set_end_frame_number(frame_number);
+        single_deepsort_target->set_path_state((single_deepsort_target->get_path_state() |
+                                                TrackPathStateBitmask::Open) &
+                                                ~(TrackPathStateBitmask::Lost |
+                                                TrackPathStateBitmask::Close));
         single_kalman_target->set_end_frame_number(frame_number);
         _update_features(single_deepsort_target,
                          single_detection->get_feature());
 
         // optical tracker update
-        single_optical_target->set_bbox(single_deepsort_target->get_bbox());
-        single_optical_target->set_end_frame_number(frame_number);
+        if (single_optical_target) {
+            single_optical_target->set_bbox(single_deepsort_target->get_bbox());
+            single_optical_target->set_end_frame_number(frame_number);
+            single_optical_target->set_path_state((single_optical_target->get_path_state() |
+                                                TrackPathStateBitmask::Open) &
+                                                ~(TrackPathStateBitmask::Lost |
+                                                TrackPathStateBitmask::Close));
+        }
 
         for (auto iter = m_event_handlers.begin();
              iter != m_event_handlers.end(); iter++) {
@@ -578,10 +652,12 @@ void DeepSortTracker::_update_target(TrackTargetPtr &deepsort_target_ptr,
         }
     } else if (event_handler_res ==
                EventHandlerResultTypes::Association_RejectAndCreateNew) {
-        TrackTargetPtr optical_flow_track_target_ptr =
-            m_optical_flow_tracker->create_target(single_detection,
+        TrackTargetPtr optical_flow_track_target_ptr = nullptr;
+        if (m_optical_flow_tracker) {
+            optical_flow_track_target_ptr = m_optical_flow_tracker->create_target(single_detection,
                                                   frame_number);
-        m_optical_flow_tracker->add_target(optical_flow_track_target_ptr);
+            m_optical_flow_tracker->add_target(optical_flow_track_target_ptr);
+        }
         TrackTargetPtr kalman_track_target_ptr =
             m_kalman_tracker->create_target(single_detection, frame_number);
         m_kalman_tracker->add_target(kalman_track_target_ptr);
@@ -599,7 +675,9 @@ void DeepSortTracker::push_tracking_state()
     auto x = _tracking_state_create();
     _tracking_state_fill(*x);
     m_state_stack.push_back(x);
-    m_optical_flow_tracker->push_tracking_state();
+    if (m_optical_flow_tracker) {
+        m_optical_flow_tracker->push_tracking_state();
+    }
     m_kalman_tracker->push_tracking_state();
 }
 
@@ -612,7 +690,9 @@ void DeepSortTracker::pop_tracking_state(bool apply)
     if (apply)
         _tracking_state_recover(*x);
     m_kalman_tracker->pop_tracking_state(apply);
-    m_optical_flow_tracker->pop_tracking_state(apply);
+    if (m_optical_flow_tracker) {
+        m_optical_flow_tracker->pop_tracking_state(apply);
+    }
 }
 
 int DeepSortTracker::OpticalFlowEventHandler::evt_target_association_after(

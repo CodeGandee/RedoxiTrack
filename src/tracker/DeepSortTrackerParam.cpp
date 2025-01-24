@@ -17,8 +17,15 @@ void DeepSortTrackerParam::copy_to(TrackerParam &p) const
         m->m_gating_dist_lambda = m_gating_dist_lambda;
         m->m_duplicate_iou_dist = m_duplicate_iou_dist;
         m->m_use_optical_before_track = m_use_optical_before_track;
-        m_optical_param.copy_to(m->m_optical_param);
-        m_kalman_param.copy_to(m->m_kalman_param);
+        if (m_optical_param) {
+            m->m_optical_param = std::make_shared<OpticalTrackerParam>();
+            m_optical_param->copy_to(*m->m_optical_param);
+            std::cout << "open optical tracker" << std::endl;
+        }
+        if (m_kalman_param) {
+            m->m_kalman_param = std::make_shared<TrackerParam>();
+            m_kalman_param->copy_to(*m->m_kalman_param);
+        }
     }
 }
 

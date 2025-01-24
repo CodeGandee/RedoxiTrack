@@ -94,8 +94,25 @@ class REDOXI_TRACK_API TrackerBase
      * get all targets still being tracked
      * @return
      */
-    virtual const std::map<int, TrackTargetPtr> &
-        get_all_open_targets() const = 0;
+    virtual std::map<int, TrackTargetPtr> get_all_open_targets() const {
+        std::map<int, TrackTargetPtr> open_targets;
+        for (auto &p : m_id2target) {
+            if (p.second->get_path_state() & TrackPathStateBitmask::Open) {
+                open_targets[p.first] = p.second;
+            }
+        }
+        return open_targets;
+    }
+
+    virtual std::map<int, TrackTargetPtr> get_all_lost_targets() const {
+        std::map<int, TrackTargetPtr> lost_targets;
+        for (auto &p : m_id2target) {
+            if (p.second->get_path_state() & TrackPathStateBitmask::Lost) {
+                lost_targets[p.first] = p.second;
+            }
+        }
+        return lost_targets;
+    }
 
     /**
      * return NULL if target is not found

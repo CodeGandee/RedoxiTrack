@@ -3,6 +3,8 @@
 //
 
 #include "RedoxiTrack/tracker/BotsortTrackerParam.h"
+#include "RedoxiTrack/tracker/OpticalTrackerParam.h"
+#include "RedoxiTrack/tracker/TrackerParam.h"
 
 namespace RedoxiTrack{
     void BotsortTrackerParam::copy_to(TrackerParam &p) const {
@@ -23,8 +25,15 @@ namespace RedoxiTrack{
             m->m_use_optical_before_track = m_use_optical_before_track;
             m->m_fuse_score = m_fuse_score;
             m->m_use_reid_feature = m_use_reid_feature;
-            m_optical_param.copy_to(m->m_optical_param);
-            m_kalman_param.copy_to(m->m_kalman_param);
+            if (m_optical_param) {
+                m->m_optical_param = std::make_shared<OpticalTrackerParam>();
+                m_optical_param->copy_to(*m->m_optical_param);
+                std::cout << "open optical tracker" << std::endl;
+            }
+            if (m_kalman_param) {
+                m->m_kalman_param = std::make_shared<TrackerParam>();
+                m_kalman_param->copy_to(*m->m_kalman_param);
+            }
         }
     }
 
