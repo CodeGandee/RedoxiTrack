@@ -43,7 +43,7 @@ add_definitions(-DREDOXI_TEST_OUTPUT_DIR="${REDOXI_TEST_OUTPUT_DIR}")
 
 # create targets
 include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
-set(common_source_files 
+set(common_source_files
     ${CMAKE_CURRENT_LIST_DIR}/src/example_common.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/example_person_detector.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/opencv_demo_person_det.cpp
@@ -68,10 +68,18 @@ if(WITH_EXAMPLE_TRACK_PERSONS)
         message(STATUS "Downloading YOLOX model to ${yolox_model_dst}")
         file(DOWNLOAD ${yolox_model_url} ${yolox_model_dst})
     endif()
-    
+
     # track person in video
-    add_executable(track_persons ${CMAKE_CURRENT_LIST_DIR}/track_persons.cpp ${common_source_files})
+    add_executable(track_persons
+                    ${CMAKE_CURRENT_LIST_DIR}/track_persons.cpp
+                    ${common_source_files})
     target_link_libraries(track_persons PRIVATE ${common_deps})
+
+    # simple track in video
+    add_executable(simple_track
+                    ${CMAKE_CURRENT_LIST_DIR}/simple_track.cpp
+                    ${common_source_files})
+    target_link_libraries(simple_track PRIVATE ${common_deps})
 endif()
 
 # track face in video
